@@ -1,4 +1,5 @@
 local logger = require("neotest.logging")
+local Path = require("plenary.path")
 
 local M = {}
 local separator = "::"
@@ -57,7 +58,7 @@ end
 local function make_outputs(test, output_file)
   local test_attr = test["_attr"] or test[1]["_attr"]
 
-  local test_id = test_attr.file .. separator .. test_attr.line
+  local test_id = M.TestMapper:remote_to_local(test_attr.file) .. separator .. test_attr.line
   logger.info("PHPUnit id:", { test_id })
 
   local test_output = {
@@ -105,5 +106,41 @@ M.get_test_results = function(parsed_xml_output, output_file)
   local tests = iterate_key(parsed_xml_output, "testcase", {})
   return iterate_test_outputs(tests, output_file, {})
 end
+
+function Path:map_root(from, to)
+  local relative = Path:new(to, self:make_relative(from))
+  -- plenary.path doesn't export clean(), so this is the easiest way to use it
+  return Path:new(tostring(relative))
+end
+
+local Mapper = {}
+
+function Mapper.get_mapping()
+  return nil
+end
+
+function Mapper:remote_to_local(path)
+  local map = self.get_mapping()
+  if map == nil then return path end
+
+  return tostring(Path:new(path):map_root(map.remote, map.native))
+end
+
+function Mapper:local_to_remote(path)
+  local map = self.get_mapping()
+  if map == nil then return path end
+
+  return tostring(Path:new(path):map_root(map.native, map.remote))
+end
+
+function Mapper:new(o)
+    local new = o or {}
+    setmetatable(new, self)
+    self.__index = self
+    return new
+end
+
+M.TestMapper = Mapper:new()
+M.ResultMapper = Mapper:new()
 
 return M

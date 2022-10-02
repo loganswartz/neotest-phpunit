@@ -61,18 +61,23 @@ local function get_phpunit_cmd()
   return binary
 end
 
+---@return string
+local function get_result_path()
+  return async.fn.tempname()
+end
+
 ---@param args neotest.RunArgs
 ---@return neotest.RunSpec | nil
 function NeotestAdapter.build_spec(args)
   local position = args.tree:data()
-  local results_path = async.fn.tempname()
+  local results_path = get_result_path()
 
   local binary = get_phpunit_cmd()
 
   local command = vim.tbl_flatten({
     binary,
-    position.name ~= "tests" and position.path,
-    "--log-junit=" .. results_path,
+    position.name ~= "tests" and utils.TestMapper:local_to_remote(position.path),
+    "--log-junit=" .. utils.ResultMapper:local_to_remote(results_path),
   })
 
   if position.type == "test" then
@@ -101,7 +106,7 @@ end
 ---@param tree neotest.Tree
 ---@return neotest.Result[]
 function NeotestAdapter.results(test, result, tree)
-  local output_file = test.context.results_path
+  local output_file = utils.ResultMapper:remote_to_local(test.context.results_path)
 
   local ok, data = pcall(lib.files.read, output_file)
   if not ok then
@@ -137,6 +142,25 @@ setmetatable(NeotestAdapter, {
         return opts.phpunit_cmd
       end
     end
+
+    if is_callable(opts.test_pathmap) then
+      utils.TestMapper.get_mapping = opts.test_pathmap
+    elseif opts.test_pathmap then
+      local map = opts.test_pathmap
+      utils.TestMapper.get_mapping = function()
+        return { native = map.native, remote = map.remote}
+      end
+    end
+
+    if is_callable(opts.result_pathmap) then
+      utils.ResultMapper.get_mapping = opts.result_pathmap
+    elseif opts.result_pathmap then
+      local map = opts.result_pathmap
+      utils.ResultMapper.get_mapping = function()
+        return { native = map.native, remote = map.remote}
+      end
+    end
+
     return NeotestAdapter
   end,
 })
